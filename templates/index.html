@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NetSpy | Security Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600;800&display=swap');
+        
+        :root {
+            --bg: #050505; --surface: rgba(20, 20, 22, 0.65); --border: rgba(255, 255, 255, 0.08);
+            --accent: #00ff88; --accent-glow: rgba(0, 255, 136, 0.2); --text-main: #ffffff;
+            --text-muted: #888888; --danger: #ff3366; --warning: #ffcc00;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text-main);
+            margin: 0; padding: 0; min-height: 100vh; display: flex; flex-direction: column;
+            background-image: radial-gradient(circle at 15% 50%, rgba(0, 255, 136, 0.05), transparent 25%),
+                              radial-gradient(circle at 85% 30%, rgba(255, 51, 102, 0.05), transparent 25%);
+        }
+
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulseGlow { 0% { box-shadow: 0 0 0 0 var(--accent-glow); } 70% { box-shadow: 0 0 20px 10px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+
+        header {
+            display: flex; justify-content: space-between; align-items: center; padding: 1.5rem 3rem;
+            border-bottom: 1px solid var(--border); background: rgba(5, 5, 5, 0.8);
+            backdrop-filter: blur(12px); position: sticky; top: 0; z-index: 1000;
+        }
+        .logo { font-size: 1.5rem; font-weight: 800; letter-spacing: -1px; display: flex; align-items: center; gap: 10px; }
+        
+        .status-badge {
+            background: rgba(0, 255, 136, 0.1); border: 1px solid var(--accent);
+            color: var(--accent); padding: 5px 15px; border-radius: 20px;
+            font-size: 0.85rem; font-weight: 600; display: flex; align-items: center; gap: 8px;
+        }
+        .status-badge::before { content: ''; display: block; width: 8px; height: 8px; background: var(--accent); border-radius: 50%; animation: pulseGlow 2s infinite; }
+
+        main { flex: 1; padding: 2rem 3rem; max-width: 1400px; margin: 0 auto; width: 100%; box-sizing: border-box; }
+        .controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; animation: fadeInUp 0.5s ease forwards; }
+        
+        .btn {
+            background: transparent; color: var(--text-main); border: 1px solid var(--border);
+            padding: 12px 24px; border-radius: 8px; font-family: 'JetBrains Mono', monospace;
+            cursor: pointer; transition: all 0.3s ease; display: flex; align-items: center; gap: 10px;
+        }
+        .btn-primary { background: var(--text-main); color: var(--bg); border-color: var(--text-main); font-weight: 700; }
+        .btn-primary:hover { background: var(--accent); color: var(--bg); border-color: var(--accent); box-shadow: 0 0 15px var(--accent-glow); transform: translateY(-2px); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem; }
+        .visual-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }
+        @media (max-width: 900px) { .visual-grid { grid-template-columns: 1fr; } }
+        
+        .card {
+            background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+            padding: 1.5rem; backdrop-filter: blur(10px); opacity: 0;
+            animation: fadeInUp 0.5s ease forwards; transition: border-color 0.3s;
+        }
+        .card:hover { border-color: rgba(255, 255, 255, 0.2); }
+        .card h3 { margin: 0 0 1rem 0; font-size: 0.9rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 1px; }
+        .value { font-family: 'JetBrains Mono', monospace; font-size: 2.5rem; font-weight: 700; margin: 0; line-height: 1.2; }
+        .sub-text { font-size: 0.85rem; color: var(--text-muted); margin-top: 5px; }
+
+        .score-card { text-align: center; border-bottom: 3px solid var(--accent); }
+        #val-score { color: var(--accent); }
+
+        .advice-box { background: rgba(0, 255, 136, 0.05); border: 1px solid var(--accent); }
+        .action-list { margin-top: 15px; padding-left: 20px; color: #e2e8f0; font-size: 0.95rem; line-height: 1.6; }
+        .action-list li { margin-bottom: 8px; }
+        
+        #map { height: 100%; min-height: 250px; border-radius: 12px; z-index: 10; border: 1px solid var(--border); }
+        .leaflet-container { background: #0a0e17; }
+
+        footer { border-top: 1px solid var(--border); padding: 2rem 3rem; color: var(--text-muted); font-size: 0.8rem; background: rgba(5, 5, 5, 0.8); line-height: 1.5; }
+        .legal-notice { max-width: 1400px; margin: 0 auto; }
+        .legal-notice strong { color: #aaa; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo">NetSpy</div>
+        <div class="status-badge">Система Активна</div>
+    </header>
+
+    <main>
+        <div class="controls">
+            <div>
+                <h1 style="margin:0; font-size: 1.8rem;">Сетевой Аудит & Мониторинг</h1>
+                <p style="color: var(--text-muted); margin: 5px 0 0 0;">Анализатор инфраструктуры и локальных угроз</p>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn" onclick="downloadLog()">Сохранить Лог</button>
+                <button class="btn btn-primary" id="scanBtn" onclick="startScan()">ИНИЦИАЛИЗАЦИЯ</button>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card score-card" id="scoreCard">
+                <h3>Security Score</h3>
+                <div class="value" id="val-score" data-target="0">0</div>
+                <div class="sub-text">Индекс защищенности из 100</div>
+            </div>
+            <div class="card">
+                <h3>Внешний шлюз</h3>
+                <div class="value" style="font-size: 1.5rem; margin-top: 15px;" id="val-ip">---.---.---.---</div>
+                <div class="sub-text" id="val-loc">Ожидание данных...</div>
+            </div>
+            <div class="card">
+                <h3>Задержка (Ping)</h3>
+                <div class="value"><span id="val-ping" data-target="0">0</span><span style="font-size: 1rem; color: var(--text-muted);"> ms</span></div>
+                <div class="sub-text">Отклик от DNS (8.8.8.8)</div>
+            </div>
+            <div class="card">
+                <h3>Аномалии портов</h3>
+                <div class="value" id="val-sus" data-target="0">0</div>
+                <div class="sub-text">Неизвестные TCP/UDP сессии</div>
+            </div>
+        </div>
+
+        <div class="visual-grid">
+            <div class="card" style="display: flex; flex-direction: column;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h3 style="margin: 0;">Телеметрия Трафика (Live)</h3>
+                    <div style="font-family: 'JetBrains Mono'; font-size: 0.85rem; color: var(--accent);">1 sec TICK</div>
+                </div>
+                <div style="flex-grow: 1; position: relative;">
+                    <canvas id="trafficChart"></canvas>
+                </div>
+            </div>
+            <div class="card" style="padding: 1rem; display: flex; flex-direction: column;">
+                <h3 style="margin: 0 0 10px 0; padding-left: 10px;">Расположение узла</h3>
+                <div id="map"></div>
+            </div>
+        </div>
+
+        <div class="card advice-box" id="adviceContainer">
+            <h3 style="color: var(--accent); margin-bottom: 10px;">Эвристический вывод & План действий</h3>
+            <div id="val-advice" style="font-size: 1.1rem; line-height: 1.5;">Нажмите кнопку "Инициализация" для сбора системных метрик.</div>
+            <ul class="action-list" id="val-actions" style="display: none;"></ul>
+        </div>
+    </main>
+
+    <footer>
+        <div class="legal-notice">
+            <strong>ЮРИДИЧЕСКОЕ УВЕДОМЛЕНИЕ И EULA:</strong> Данное программное обеспечение "NetSpy" предоставляется «как есть» (AS IS). 
+            Оно разработано исключительно в образовательных целях и предназначено для мониторинга, отладки и аудита безопасности 
+            <strong>только собственных</strong> локальных сетей и устройств пользователя. Любое использование программы для несанкционированного доступа, 
+            скрытого сбора информации или сканирования чужой инфраструктуры строго запрещено.
+            <br><br>&copy; 2026 NetSpy Project.
+        </div>
+    </footer>
+
+    <script>
+        function animateValue(obj, start, end, duration) {
+            let startTimestamp = null;
+            const step = (timestamp) => {
+                if (!startTimestamp) startTimestamp = timestamp;
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                obj.innerHTML = Math.floor(progress * (end - start) + start);
+                if (progress < 1) { window.requestAnimationFrame(step); }
+            };
+            window.requestAnimationFrame(step);
+        }
+
+        const ctx = document.getElementById('trafficChart').getContext('2d');
+        const trafficChart = new Chart(ctx, {
+            type: 'line',
+            data: { labels: Array(25).fill(''), datasets: [
+                { label: 'Входящий (KB/s)', borderColor: '#00ff88', backgroundColor: 'rgba(0, 255, 136, 0.1)', data: Array(25).fill(0), tension: 0.4, fill: true, borderWidth: 2, pointRadius: 0 },
+                { label: 'Исходящий (KB/s)', borderColor: '#ff3366', backgroundColor: 'rgba(255, 51, 102, 0.05)', data: Array(25).fill(0), tension: 0.4, fill: true, borderWidth: 2, pointRadius: 0 }
+            ]},
+            options: { maintainAspectRatio: false, responsive: true, animation: false, scales: { y: { beginAtZero: true, grid: { color: 'rgba(255, 255, 255, 0.05)' } }, x: { grid: { display: false } } }, plugins: { legend: { labels: { color: '#fff', font: { family: 'Inter' } } } } }
+        });
+
+        async function updateTrafficLive() {
+            try {
+                const response = await fetch('/api/traffic'); const data = await response.json();
+                trafficChart.data.datasets[0].data.shift(); trafficChart.data.datasets[0].data.push(data.download);
+                trafficChart.data.datasets[1].data.shift(); trafficChart.data.datasets[1].data.push(data.upload);
+                trafficChart.update();
+            } catch (error) {}
+        }
+        setInterval(updateTrafficLive, 1000);
+
+        let map; let marker;
+        function updateMap(lat, lon) {
+            if (!map) {
+                map = L.map('map').setView([lat, lon], 12);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', className: 'map-tiles' }).addTo(map);
+                marker = L.marker([lat, lon]).addTo(map);
+            } else {
+                map.setView([lat, lon], 12);
+                marker.setLatLng([lat, lon]);
+            }
+            setTimeout(() => { map.invalidateSize(); }, 400);
+        }
+        updateMap(0, 0);
+
+        async function startScan() {
+            const btn = document.getElementById('scanBtn'); 
+            btn.disabled = true; btn.innerText = "СКАНИРОВАНИЕ...";
+            try {
+                const response = await fetch('/api/scan'); const data = await response.json();
+                
+                document.getElementById('val-ip').innerText = data.ip;
+                document.getElementById('val-loc').innerText = `${data.location} | ${data.isp}`;
+                document.getElementById('val-advice').innerText = data.advice;
+
+                const actionsUl = document.getElementById('val-actions');
+                actionsUl.innerHTML = '';
+                if(data.actions && data.actions.length > 0) {
+                    data.actions.forEach(action => { const li = document.createElement('li'); li.innerText = action; actionsUl.appendChild(li); });
+                    actionsUl.style.display = 'block';
+                } else { actionsUl.style.display = 'none'; }
+
+                animateValue(document.getElementById('val-ping'), 0, data.ping, 1000);
+                animateValue(document.getElementById('val-sus'), 0, data.suspicious, 1000);
+                animateValue(document.getElementById('val-score'), 0, data.score, 1500);
+
+                const scoreCard = document.getElementById('scoreCard'); const scoreVal = document.getElementById('val-score'); const adviceBox = document.getElementById('adviceContainer');
+                if (data.score >= 80) { scoreCard.style.borderColor = 'var(--accent)'; scoreVal.style.color = 'var(--accent)'; adviceBox.style.borderColor = 'var(--accent)'; adviceBox.style.background = 'rgba(0, 255, 136, 0.05)';}
+                else if (data.score >= 50) { scoreCard.style.borderColor = 'var(--warning)'; scoreVal.style.color = 'var(--warning)'; adviceBox.style.borderColor = 'var(--warning)'; adviceBox.style.background = 'rgba(255, 204, 0, 0.05)';}
+                else { scoreCard.style.borderColor = 'var(--danger)'; scoreVal.style.color = 'var(--danger)'; adviceBox.style.borderColor = 'var(--danger)'; adviceBox.style.background = 'rgba(255, 51, 102, 0.05)';}
+
+                if(data.lat !== 0 && data.lon !== 0) { updateMap(data.lat, data.lon); }
+            } catch (error) {
+                console.error(error);
+                document.getElementById('val-advice').innerText = "Ошибка соединения. Убедитесь, что Python работает.";
+                document.getElementById('val-advice').style.color = "var(--danger)";
+            } finally {
+                btn.disabled = false; btn.innerText = "ОБНОВИТЬ ДАННЫЕ";
+            }
+        }
+
+        function downloadLog() {
+            const adviceText = document.getElementById('val-advice').innerText;
+            if (adviceText.includes("Нажмите")) { alert("Сначала запустите анализ!"); return; }
+            let logContent = `=======================================\nNetSpy Security Audit Log\nDate: ${new Date().toLocaleString()}\n=======================================\n`;
+            logContent += `IP Address: ${document.getElementById('val-ip').innerText}\nLocation: ${document.getElementById('val-loc').innerText}\n`;
+            logContent += `Latency (Ping): ${document.getElementById('val-ping').innerText} ms\nSuspicious Connections: ${document.getElementById('val-sus').innerText}\n`;
+            logContent += `Security Score: ${document.getElementById('val-score').innerText}/100\n\n[HEURISTIC CONCLUSION]\n${adviceText}\n`;
+            
+            const blob = new Blob([logContent], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob); const a = document.createElement('a');
+            a.href = url; a.download = 'netspy_audit_log.txt'; a.click(); window.URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
